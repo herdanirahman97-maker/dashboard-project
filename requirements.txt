@@ -1,2 +1,2 @@
-Pandas
-openpyxly
+pandas
+openpyxl
