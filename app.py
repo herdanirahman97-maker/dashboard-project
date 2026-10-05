@@ -98,14 +98,13 @@ try{new ResizeObserver(fit).observe(document.body);}catch(e){}
 
 
 def render(body, height=600):
-    """Tampilkan blok HTML (dashboard) persis seperti mockup; tinggi iframe menyesuaikan otomatis."""
     doc = ("<html><head><meta charset='utf-8'><style>" + DASH_CSS + "</style></head><body><div class='wrap'>"
            + body + "</div>" + AUTOSIZE + "</body></html>")
     components.html(doc, height=height, scrolling=True)
 
 
 # =====================================================================
-# 2. DATA MASTER (dari dokumen Change Feature Request DRACORE)
+# 2. DATA MASTER
 # =====================================================================
 BLN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
 BLN3 = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
@@ -135,7 +134,6 @@ MRI_CHECKLIST = [
     ("Mematikan Pesawat", [("Matikan Injector", "Tekan switch pada monitor injector"), ("Pilih menu shutdown", "Pilih menu shutdown dan matikan sistem setiap malam hari")]),
     ("Kondisi Ruang Ganti / Locker Room 1 dan 2", [("Kelengkapan baju dan celana pasien", "baju dan celana tersedia untuk seluruh ukuran"), ("Kebersihan Loker", "kondisi loker pasien bersih dan tidak terdapat sampah"), ("Kondisi smart lock loker", "Kondisi loker bisa dibuka dan ditutup menggunakan gelang"), ("Kondisi pintu loker", "Kondisi pintu loker bisa terkunci dan tertutup rapat"), ("Kelengkapan jumlah gelang smart lock", "Satu changing room memiliki 4 buah smart lock loker")]),
 ]
-# Checklist alat lain: template sederhana. Ganti/tambah sesuai form Daily QC masing-masing alat.
 DEFAULT_CHECKLIST = [
     ("Cek Kelengkapan & Peralatan Penunjang", [("Control box / panel listrik", "Lampu indikator menyala"), ("AC", "Menyala / Berfungsi"), ("Pintu ruangan", "Dapat terkunci rapat"), ("Tes publik sistem", "Terdengar secara jelas")]),
     ("Pemeriksaan Alat", [("Pesawat ON & booting", "Tidak terdapat notifikasi error dan booting secara normal"), ("QC harian alat", "Hasil QC sesuai batas penerimaan")]),
@@ -150,7 +148,6 @@ WEEKLY_SPEC = {"CT Scan (iQon)": ["CT Number", "Uniformity", "Noise", "Low Contr
                "Digital Diagnost": ["Homogenity"], "Combi Diagnost": ["Homogenity"], "Mobile Diagnost": ["Homogenity"]}
 
 _KOL = ["Uji Intensitas Cahaya Kolimasi", "Uji Akurasi Berkas Kolimasi", "Ketegalurusan Berkas"]
-# (parameter, batas) ; batas = (min, max, satuan, teks) bila numerik. Batas CT di bawah hanya ILUSTRASI -> sesuaikan dengan protokol QC internal.
 BULANAN_SPEC = {
     "CT Scan": [("Uji Akurasi Pergerakan Meja", None), ("Linearitas CT Number - Water", (-5, 5, "HU", "0 ± 5 HU")), ("Linearitas CT Number - Nylon", None),
                 ("Linearitas CT Number - Acrylic", (110, 130, "HU", "120 ± 10 HU")), ("Linearitas CT Number - Polyethylene", (-105, -85, "HU", "-95 ± 10 HU")),
@@ -188,7 +185,7 @@ KAL_DUMMY_NC = "PENDOSE FUJI ELECTRIC / DOSE-I"
 
 
 # =====================================================================
-# 3. UTIL: tanggal, status, penyimpanan
+# 3. UTIL
 # =====================================================================
 def TODAY():
     v = st.session_state.get("sim_today")
@@ -256,7 +253,6 @@ def save_entry(**kw):
 
 
 def save_upload(f):
-    """Simpan file unggahan, kembalikan path (atau '' bila tidak ada)."""
     if f is None:
         return ""
     name = "{}_{}".format(dt.datetime.now().strftime("%Y%m%d%H%M%S"), str(f.name).replace(" ", "_"))
@@ -288,7 +284,6 @@ def recs(kategori, objek=None):
 
 
 def real_daily_map():
-    """(nama, tanggal) -> 'g'/'r' dari input Daily QC & Suhu yang nyata."""
     m = {}
     for r in recs("Daily QC"):
         m[(r["objek"], r["tgl"])] = "g" if r["status"] == "Completed" else "r"
@@ -301,7 +296,7 @@ def real_daily_map():
 
 
 # =====================================================================
-# 4. BUILDER HTML (tampilan = mockup PNG)
+# 4. BUILDER HTML
 # =====================================================================
 def pill(s):
     return "<span class='pill {}'>{}</span>".format(CL.get(s, "b"), s)
@@ -343,7 +338,6 @@ def legend_html(pme=False):
 BAN = "<div class='ban'>&#9888; SIMULASI TAMPILAN &ndash; data dummy ditampilkan bersama data yang diinput (matikan di sidebar bila tidak diperlukan).</div>"
 
 
-# ---------- PMI: ringkasan harian ----------
 def build_daily(y, m, today, dummy, rmap):
     n = calendar.monthrange(y, m)[1]
     r = rng("daily", y, m)
@@ -377,7 +371,6 @@ def build_daily(y, m, today, dummy, rmap):
     return h + "</table>", (sum(ratios) / len(ratios) if ratios else None)
 
 
-# ---------- PMI: Suhu & Kelembapan ----------
 def suhu_series(area, y, m, today, dummy):
     n = calendar.monthrange(y, m)[1]
     T, H, W = [None] * (n * 3), [None] * (n * 3), [""] * (n * 3)
@@ -472,7 +465,6 @@ def suhu_section_html(area, y, m, today, dummy):
                "Titik merah = nilai di luar target &middot; PIC = inisial petugas yang menginput pada tiap shift &middot; di luar batas wajib mengisi temuan & tindakan korektif (notifikasi ke Supervisor Radiologi)")
 
 
-# ---------- PMI: Daily QC checklist ----------
 def flat_params(modality):
     cats = CHECKLISTS.get(modality, DEFAULT_CHECKLIST)
     return cats, sum(len(items) for _, items in cats)
@@ -528,7 +520,6 @@ def qc_section_html(modality, y, m, today, dummy):
                "Checklist mengikuti jenis alat &middot; sel merah/kuning = parameter tidak sesuai, wajib isi temuan & tindakan awal")
 
 
-# ---------- PMI: mingguan, bulanan, tahunan ----------
 def month_weeks(y, m):
     n = calendar.monthrange(y, m)[1]
     out, s = [], 1
@@ -660,11 +651,9 @@ def build_pmi(y, m):
         yearly=yrows)
 
 
-# ---------- PME ----------
 def build_pme(today, dummy):
     MON = BLN3
     prio = []
-    # --- Preventive Maintenance ---
     pm_rows, cp = [], {"Valid": 0, "Due Soon": 0, "Overdue": 0}
     pm_real = recs("Preventive Maintenance")
     for i, (name, base) in enumerate(PM_ITEMS):
@@ -710,7 +699,6 @@ def build_pme(today, dummy):
     t += "</table>"
     pm_html = t if pm_rows else "<div style='padding:14px;color:#777'>Belum ada data PM.</div>"
 
-    # --- Uji Kesesuaian ---
     uk_rows, cu = [], {"Aktif": 0, "Warning": 0, "Expired": 0, "Need Evaluation": 0}
     uk_real = recs("Uji Kesesuaian")
     for i, (name, base, per) in enumerate(UK_ITEMS):
@@ -755,7 +743,6 @@ def build_pme(today, dummy):
         g += "<line x1='{0}' x2='{0}' y1='20' y2='{1}' stroke='#d64545' stroke-width='1.5' stroke-dasharray='4 3'/><text x='{2}' y='{3}' fill='#d64545' font-weight='bold'>Hari ini {4}</text></svg>".format(tx, RH * len(uk_rows) + 30, tx + 4, RH * len(uk_rows) + 38, dfmt(today))
         uk_html = g + tbl(trows, ["No", "Jenis Modality", "Periode", "Tanggal Uji", "Masa Berlaku s.d.", "Sisa Hari", "No. Sertifikat", "Hasil Uji", "Reminder Otomatis", "Status"])
 
-    # --- Kalibrasi ---
     kal_rows, ck = [], {"Valid": 0, "Due Soon": 0, "Overdue": 0, "Not Compliant": 0}
     kal_real = recs("Kalibrasi")
     for i, (name, off) in enumerate(KAL_ITEMS):
@@ -821,7 +808,6 @@ def build_pme(today, dummy):
         pm_rows=pm_rows, uk_rows=uk_rows, kal_rows=kal_rows, prio_list=prio)
 
 
-# ---------- Struktur menu ----------
 def pending_counts(today, dummy):
     rs = recs("Suhu & Kelembapan")
     su = sum(1 for a in AREAS if not any(x["objek"] == a and x["tgl"] == today for x in rs))
@@ -896,7 +882,6 @@ def cat_bar(text):
 
 
 def filter_row(pme=False):
-    """Baris filter seperti mockup: Bulan, Tahun, Load, Export."""
     t = TODAY()
     dm = t.month - 1 if t.month > 1 else 12
     dy = t.year if t.month > 1 else t.year - 1
@@ -1305,7 +1290,7 @@ def page_dash_pme():
 
 
 # =====================================================================
-# 9. NAVIGASI (menu besar: DRACORE | PMI | PME)
+# 9. NAVIGASI
 # =====================================================================
 pages = {
     "DRACORE": [
