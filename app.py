@@ -659,37 +659,33 @@ def build_pme(today, dummy):
                 t += "<td style='background:{}'></td>".format("#fff6df" if mo == today.month else "#fff")
         t += "<td>{} / 3</td><td>{}</td><td>{}</td><td><b>{}</b></td><td>{}</td><td>&#128206; {}</td></tr>".format(len(r["done"]), dfmt(r["last"]), dfmt(r["nx"]), r["left"], pill(r["status"]), r["rep"])
 
-    # ---- BARIS TOTAL: jumlah PM per bulan (hanya jumlah, tanpa format x/y) ----
+    # ---- BARIS TOTAL: numerator, denumerator, dan persentase pencapaian per bulan ----
     if pm_rows:
-        tot = [0] * 12       # rencana: semua sel berwarna
-        tot_done = [0] * 12  # terlaksana: sel hijau di kalender
+        den = [0] * 12  # rencana: semua sel berwarna (hijau/biru/kuning/merah)
+        num = [0] * 12  # terlaksana: sel hijau
         for r in pm_rows:
             for mo in range(1, 13):
                 has_done = any(x.month == mo for x in r["done"])
                 is_next = r["nx"].year == today.year and r["nx"].month == mo
-                if has_done or is_next:  # setiap sel berwarna (hijau/biru/kuning/merah) dihitung 1
-                    tot[mo - 1] += 1
+                if has_done or is_next:
+                    den[mo - 1] += 1
                 if has_done:
-                    tot_done[mo - 1] += 1
+                    num[mo - 1] += 1
         tot_style = "background:#dcdcdc;font-weight:bold"
-        t += "<tr><td colspan='2' class='l' style='{}'>Jumlah PM per Bulan</td>".format(tot_style)
-        for mo in range(12):
-            t += "<td style='{}'>{}</td>".format(tot_style, tot[mo] if tot[mo] else "")
-        t += "<td colspan='6' style='{}'></td></tr>".format(tot_style)
+        bdg = "display:inline-block;min-width:18px;padding:1px 5px;border-radius:4px;color:#fff;font-weight:bold;font-size:10.5px;background:{}"
 
-        # ---- BARIS REALISASI: biru = terlaksana, hijau = rencana ----
-        bdg = "display:inline-block;min-width:15px;padding:1px 4px;border-radius:4px;color:#fff;font-weight:bold;font-size:10px;margin:0 1px;background:{}"
-        t += ("<tr><td colspan='2' class='l' style='{}'>Realisasi PM tiap bulan"
-              "<div style='font-weight:normal;font-size:9px;color:#555;margin-top:2px'>"
-              "<span style='{}'>&nbsp;</span> terlaksana &nbsp; <span style='{}'>&nbsp;</span> rencana</div></td>").format(
-            tot_style, bdg.format("#2a7ca8"), bdg.format("#2e9e5b"))
-        for mo in range(12):
-            if tot[mo]:
-                t += "<td style='{}'><span style='{}'>{}</span><span style='{}'>{}</span></td>".format(
-                    tot_style, bdg.format("#2a7ca8"), tot_done[mo], bdg.format("#2e9e5b"), tot[mo])
-            else:
-                t += "<td style='{}'></td>".format(tot_style)
-        t += "<td colspan='6' style='{}'></td></tr>".format(tot_style)
+        def tot_row(label, cells):
+            row = "<tr><td colspan='2' class='l' style='{}'>{}</td>".format(tot_style, label)
+            for c in cells:
+                row += "<td style='{}'>{}</td>".format(tot_style, c)
+            return row + "<td colspan='6' style='{}'></td></tr>".format(tot_style)
+
+        t += tot_row("Kegiatan PM yang terlaksana (Numerator)",
+                     ["<span style='{}'>{}</span>".format(bdg.format("#2a7ca8"), num[i]) if den[i] else "" for i in range(12)])
+        t += tot_row("Rencana Kegiatan PM Tiap Bulan (Denumerator)",
+                     ["<span style='{}'>{}</span>".format(bdg.format("#2e9e5b"), den[i]) if den[i] else "" for i in range(12)])
+        t += tot_row("Persentase Pencapaian (%)",
+                     ["{}%".format(round(num[i] / den[i] * 100)) if den[i] else "" for i in range(12)])
 
     t += "</table>"
     pm_html = t if pm_rows else "<div style='padding:14px;color:#777'>Belum ada data PM.</div>"
@@ -797,7 +793,7 @@ def build_pme(today, dummy):
     return dict(
         kpi=kp,
         prio=sec("PME &ndash; Prioritas Tindak Lanjut & Reminder Otomatis (urut jatuh tempo terdekat)", ["Prioritas", "Reminder", "Audit Trail", "Summary"], pr_html, "Notifikasi bertingkat otomatis: H-180 &rarr; H-90 &rarr; H-30 &rarr; Overdue (eskalasi ke Supervisor Radiologi)"),
-        pm=sec("PME &ndash; Preventive Maintenance {} (Teknisi Vendor / Elektromedis / PIC Alat Radiologi)".format(today.year), ["Kalender", "Riwayat", "Due Soon", "Summary"], pm_html, "Angka dalam kalender = tanggal pelaksanaan &middot; hijau = sudah dilakukan &middot; biru = terjadwal &middot; kuning = due soon &middot; merah = overdue &middot; periode 2&ndash;4 kali setahun &middot; Jumlah PM per Bulan = total alat yang memiliki PM pada bulan tersebut &middot; Realisasi PM tiap bulan: biru = terlaksana, hijau = rencana"),
+        pm=sec("PME &ndash; Preventive Maintenance {} (Teknisi Vendor / Elektromedis / PIC Alat Radiologi)".format(today.year), ["Kalender", "Riwayat", "Due Soon", "Summary"], pm_html, "Angka dalam kalender = tanggal pelaksanaan &middot; hijau = sudah dilakukan &middot; biru = terjadwal &middot; kuning = due soon &middot; merah = overdue &middot; periode 2&ndash;4 kali setahun &middot; Numerator (biru) = kegiatan PM terlaksana &middot; Denumerator (hijau) = rencana kegiatan PM &middot; Persentase = Numerator / Denumerator x 100"),
         uk=sec("PME &ndash; Uji Kesesuaian MRHP {} &middot; Timeline Masa Berlaku (PPR / Fisikawan Medis / PIC Alat)".format(today.year), ["Timeline", "Table", "Reminder", "Summary"], uk_html, "Periode uji: 4 tahun (3 tahun untuk Fujifilm Digital Mammography FDR) &middot; garis merah putus-putus = hari ini"),
         kal=sec("PME &ndash; Kalibrasi MRHP {} &middot; Jadwal Jatuh Tempo 12 Bulan ke Depan (Elektromedis / PIC Alat)".format(today.year), ["Jadwal", "Sertifikat", "Overdue", "Summary"], kal_html, "Kolom bulan = bulan masa berlaku sertifikat berakhir &middot; kolom Lewat = sudah melewati jatuh tempo &middot; periode kalibrasi 1 tahun sekali"),
         pm_rows=pm_rows, uk_rows=uk_rows, kal_rows=kal_rows, prio_list=prio)
