@@ -4,7 +4,7 @@ DRACORE - Dashboard Radiology Assurance, Compliance & Operational Reliability Ex
 Mandaya Royal Hospital Puri  |  Streamlit app (app.py)
 
 Jalankan: streamlit run app.py
-Syarat: streamlit>=1.36, pandas, openpyxl
+Syarat: streamlit>=1.36, pandas, openpyxl, requests
 """
 import calendar
 import datetime as dt
@@ -12,9 +12,11 @@ import io
 import json
 import os
 import random
+import time
 import zlib
 
 import pandas as pd
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -23,6 +25,7 @@ st.set_page_config(page_title="DRACORE - Mandaya Royal Hospital Puri", page_icon
 DATA_DIR = "data"
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 ENTRY_FILE = os.path.join(DATA_DIR, "entries.csv")
+DEFAULT_USER = "Herdani Rahman"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # =====================================================================
@@ -197,7 +200,7 @@ def DUMMY():
     return bool(st.session_state.get("use_dummy", True))
 
 def petugas():
-    return str(st.session_state.get("user_name", "Berliana")).strip() or "Petugas"
+    return str(st.session_state.get("user_name", DEFAULT_USER)).strip() or "Petugas"
 
 def initials(name):
     p = [x for x in str(name).split() if x]
@@ -282,6 +285,40 @@ def real_daily_map():
     for k, v in tmp.items():
         m[k] = "r" if "Abnormal" in v else "g"
     return m
+
+# ---------------------------------------------------------------------
+# Supabase: kredensial & cek koneksi
+# ---------------------------------------------------------------------
+def supabase_creds():
+    """Ambil SUPABASE_URL & SUPABASE_KEY dari environment variable atau .streamlit/secrets.toml."""
+    url = os.environ.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_KEY", "")
+    try:
+        url = url or st.secrets.get("SUPABASE_URL", "")
+        key = key or st.secrets.get("SUPABASE_KEY", "")
+    except Exception:
+        pass
+    return str(url).strip().rstrip("/"), str(key).strip()
+
+def check_supabase(timeout=6):
+    """Return (ok, pesan, latency_ms)."""
+    url, key = supabase_creds()
+    if not url or not key:
+        return False, "SUPABASE_URL / SUPABASE_KEY belum diisi", None
+    if not url.startswith("http"):
+        return False, "SUPABASE_URL tidak valid (harus diawali https://)", None
+    t0 = time.time()
+    try:
+        r = requests.get(url + "/auth/v1/health",
+                         headers={"apikey": key, "Authorization": "Bearer " + key}, timeout=timeout)
+        ms = round((time.time() - t0) * 1000)
+        if r.status_code == 200:
+            return True, "Terhubung ke Supabase", ms
+        if r.status_code in (401, 403):
+            return False, "Key ditolak (HTTP {}) - periksa SUPABASE_KEY".format(r.status_code), ms
+        return False, "Respons tidak terduga (HTTP {})".format(r.status_code), ms
+    except requests.exceptions.RequestException as e:
+        return False, "Gagal terhubung: {}".format(type(e).__name__), None
 
 # =====================================================================
 # 4. BUILDER HTML
@@ -1024,6 +1061,20 @@ def page_rekap():
                 os.remove(ENTRY_FILE)
             st.success("Data input dihapus.")
 
+def page_supabase():
+    heading("Cek Koneksi Supabase", "Beranda &rsaquo; DRACORE &rsaquo; <b>Koneksi</b>", sub="Uji koneksi aplikasi ke database Supabase")
+    url, key = supabase_creds()
+    masked = (key[:6] + "..." + key[-4:]) if len(key) > 12 else ("***" if key else "- belum diisi -")
+    st.write("**URL:**", url or "- belum diisi -")
+    st.write("**Key:**", masked)
+    if st.button("🔌 Tes koneksi sekarang", type="primary", key="sb_test"):
+        with st.spinner("Menghubungi Supabase..."):
+            ok, msg, ms = check_supabase()
+        (st.success if ok else st.error)(msg + ("  ·  {} ms".format(ms) if ms is not None else ""))
+    st.caption("Isi kredensial di .streamlit/secrets.toml atau environment variable SUPABASE_URL & SUPABASE_KEY.")
+    with st.expander("Contoh .streamlit/secrets.toml"):
+        st.code('SUPABASE_URL = "https://xxxxxxxx.supabase.co"\nSUPABASE_KEY = "anon-atau-publishable-key"', language="toml")
+
 def export_excel(pmi_yearly=None, pme=None):
     bio = io.BytesIO()
     with pd.ExcelWriter(bio, engine="openpyxl") as xw:
@@ -1374,6 +1425,7 @@ pages = {
         st.Page(page_home, title="Struktur Menu", icon="🏠", url_path="home", default=True),
         st.Page(page_dash_all, title="Dashboard DRACORE", icon="📊", url_path="dashboard"),
         st.Page(page_rekap, title="Rekap & Download", icon="🗂️", url_path="rekap"),
+        st.Page(page_supabase, title="Cek Koneksi Supabase", icon="🔌", url_path="supabase"),
     ],
     "PMI - Pemantapan Mutu Internal": [
         st.Page(page_suhu, title="Suhu & Kelembapan", icon="🌡️", url_path="pmi-suhu"),
@@ -1396,10 +1448,13 @@ pg = st.navigation(pages)
 with st.sidebar:
     st.markdown("---")
     st.markdown("<div style='background:linear-gradient(160deg,#1b4f86,#2a7ca8);color:#fff;border-radius:10px;padding:12px;text-align:center'>"
-                "<b>{}</b><br><small>RADIOLOGY DEPARTMENT</small></div>".format(str(st.session_state.get("user_name", "Berliana")).upper()), unsafe_allow_html=True)
-    st.text_input("Nama petugas (akun login)", value="Berliana", key="user_name")
+                "<b>{}</b><br><small>RADIOLOGY DEPARTMENT</small></div>".format(str(st.session_state.get("user_name", DEFAULT_USER)).upper()), unsafe_allow_html=True)
+    st.text_input("Nama petugas (akun login)", value=DEFAULT_USER, key="user_name")
     st.date_input("Tanggal simulasi", value=dt.date(2026, 10, 5), key="sim_today")
     st.checkbox("Tampilkan data dummy (simulasi)", value=True, key="use_dummy")
+    if st.button("🔌 Cek Supabase", key="sb_side"):
+        _ok, _msg, _ms = check_supabase()
+        (st.success if _ok else st.error)(_msg + ("  ·  {} ms".format(_ms) if _ms is not None else ""))
     st.caption("Mandaya Royal Hospital Puri · DRACORE v1.0")
 
 pg.run()
