@@ -83,6 +83,13 @@ td.c{color:#fff;font-weight:bold}
 .sm b{display:block;font-size:12.5px;margin-bottom:3px}.sm div{font-size:10.5px;color:#667;line-height:1.5}
 .fl{display:flex;align-items:center;margin-top:16px;background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px #0002}
 .fl div.st{flex:1;text-align:center;font-size:11px}.fl div.st b{display:block;font-size:12px;margin-bottom:2px}.fl div.ar{color:#99a;font-size:20px}
+.dl{display:inline-block;min-width:38px;padding:2px 9px;border-radius:10px;color:#fff;font-weight:bold;font-size:10.5px}
+.qcw{display:flex;gap:14px;align-items:flex-start}.qcl{flex:1;min-width:0;overflow-x:auto}
+.lg{width:300px;flex-shrink:0;background:#f8fafc;border:1px solid #e1e7ef;border-radius:8px;padding:10px 12px;font-size:10.5px}
+.lg h4{font-size:12px;margin-bottom:6px}
+.lg .cat{background:#cfe3f7;font-weight:bold;border-radius:4px;padding:3px 6px;margin:8px 0 4px;font-size:10.5px}
+.lg .row{display:flex;gap:6px;padding:3px 0;border-bottom:1px dashed #e3e8ef;line-height:1.35}
+.lg .cd{flex:0 0 30px;font-weight:bold;color:#235b9c}
 """
 
 AUTOSIZE = """<script>
@@ -281,6 +288,10 @@ def real_daily_map():
 # =====================================================================
 def pill(s):
     return "<span class='pill {}'>{}</span>".format(CL.get(s, "b"), s)
+
+def left_badge(left, soon=60):
+    c = "r" if left < 0 else ("y" if left <= soon else "g")
+    return "<span class='dl {}'>{}</span>".format(c, left)
 
 def kpi(items):
     o = "<div class='kpis'>"
@@ -488,6 +499,131 @@ def qc_section_html(modality, y, m, today, dummy):
     return sec("PMI Harian &ndash; Form Digital Daily Quality Control Alat Radiologi", ["Checklist", "Trend %", "Not Compliant", "Summary"], head + q,
                "Checklist mengikuti jenis alat &middot; sel merah/kuning = parameter tidak sesuai, wajib isi temuan & tindakan awal")
 
+def qc_matrix(modality, y, m, today, dummy):
+    n = calendar.monthrange(y, m)[1]
+    cats, _ = flat_params(modality)
+    real = {}
+    for x in recs("Daily QC", modality):
+        if x["tgl"].year == y and x["tgl"].month == m:
+            real[x["tgl"].day] = x
+    r = rng("qc", modality, y, m)
+    params = []
+    for cat, items in cats:
+        for k, p in items:
+            params.append(("P{}".format(len(params) + 1), cat, k, p))
+    mat = []
+    for flat in range(len(params)):
+        row = []
+        for dd in range(1, n + 1):
+            dm = dt.date(y, m, dd)
+            dv = r.choices(["g", "y", "r"], [96, 2.5, 1.5])[0]
+            if dm > today:
+                s = None
+            elif dd in real:
+                stl = real[dd]["det"].get("st", [])
+                s = stl[flat] if flat < len(stl) else "g"
+            elif dummy:
+                s = dv
+            else:
+                s = None
+            row.append(s)
+        mat.append(row)
+    return n, params, mat, real
+
+def qc_chart_html(modality, y, m, today, dummy):
+    n, params, mat, real = qc_matrix(modality, y, m, today, dummy)
+    total = len(params)
+    days = []
+    for d in range(n):
+        col = [mat[i][d] for i in range(total)]
+        if all(v is None for v in col):
+            days.append(None)
+            continue
+        days.append(dict(ok=sum(1 for v in col if v == "g"), ny=sum(1 for v in col if v == "y"), nr=sum(1 for v in col if v == "r"),
+                         fails=[(i, v) for i, v in enumerate(col) if v in ("y", "r")]))
+    filled = [x for x in days if x]
+
+    # ---- SVG bar chart ----
+    L, cw, top, Hh = 54, 32, 24, 200
+    mf = max([len(x["fails"]) for x in filled] + [1])
+    W = L + n * cw + 6
+    y0 = top + Hh
+    Ht = y0 + 30 + mf * 10 + 8
+    g = "<svg width='{}' height='{}' xmlns='http://www.w3.org/2000/svg' font-family='DejaVu Sans' font-size='9'>".format(W, Ht)
+    for v in sorted(set([0, total] + [round(total * f) for f in (.25, .5, .75)])):
+        yy = y0 - v / total * Hh
+        g += ("<line x1='{}' x2='{}' y1='{:.1f}' y2='{:.1f}' stroke='#dfe5ec'/>"
+              "<text x='{}' y='{:.1f}' text-anchor='end' fill='#445'>{}</text>").format(L, W, yy, yy, L - 5, yy + 3, v)
+    for d, x in enumerate(days):
+        x0 = L + d * cw
+        g += "<text x='{:.1f}' y='{}' text-anchor='middle' font-weight='bold' fill='#244'>{}</text>".format(x0 + cw / 2, y0 + 13, d + 1)
+        if x is None:
+            continue
+        cy = y0
+        for cnt, colr in ((x["ok"], "#2e9e5b"), (x["ny"], "#f0a81c"), (x["nr"], "#d64545")):
+            if cnt:
+                hh = cnt / total * Hh
+                cy -= hh
+                g += "<rect x='{:.1f}' y='{:.1f}' width='{}' height='{:.1f}' fill='{}'/>".format(x0 + 5, cy, cw - 10, hh, colr)
+        bad = x["ny"] + x["nr"]
+        g += "<text x='{:.1f}' y='{}' text-anchor='middle' font-size='7.5' font-weight='bold' fill='{}'>{}/{}</text>".format(
+            x0 + cw / 2, top - 7, "#c0392b" if bad else "#2e7d4f", x["ok"], total)
+        for j, (i, v) in enumerate(x["fails"]):
+            g += "<text x='{:.1f}' y='{}' text-anchor='middle' font-size='8' font-weight='bold' fill='{}'>{}</text>".format(
+                x0 + cw / 2, y0 + 27 + j * 10, "#d64545" if v == "r" else "#c98a00", params[i][0])
+    g += "<text x='{}' y='{}' text-anchor='end' font-size='7.5' fill='#c0392b' font-weight='bold'>Tidak lolos</text></svg>".format(L - 5, y0 + 27)
+
+    # ---- ringkasan ----
+    tok = sum(x["ok"] for x in filled)
+    tall = len(filled) * total
+    pct = "{}%".format(round(tok / tall * 100)) if tall else "-"
+    clean = sum(1 for x in filled if not x["fails"])
+    nfail = sum(len(x["fails"]) for x in filled)
+
+    def stat(l, v, c="#111"):
+        return "<div class='stat'><div class='l'>{}</div><div class='v' style='color:{}'>{}</div></div>".format(l, c, v)
+
+    stats = ("<div class='stats'>" + stat("Parameter uji per hari", total) + stat("Pencapaian bulan ini", pct, "#2e9e5b")
+             + stat("Hari 100% lolos", "{} / {}".format(clean, len(filled))) + stat("Total temuan tidak lolos", "{} &#9888;".format(nfail), "#d64545") + "</div>")
+
+    # ---- rincian parameter tidak lolos ----
+    rows = ""
+    for d, x in enumerate(days):
+        if not x or not x["fails"]:
+            continue
+        items = "<br>".join("<b style='color:{}'>{}</b> {} <span style='color:#777'>({})</span>".format(
+            "#d64545" if v == "r" else "#c98a00", params[i][0], params[i][2], params[i][3]) for i, v in x["fails"])
+        rv = real.get(d + 1)
+        tm = (rv["temuan"] or "-") if rv else "-"
+        pic = initials(rv["petugas"]) if rv else STAFF[(d * 4 + d // 5) % 9]
+        rows += "<tr><td>{}</td><td><b>{}/{}</b></td><td class='l'>{}</td><td class='l'>{}</td><td>{}</td></tr>".format(
+            dfmt(dt.date(y, m, d + 1)), x["ok"], total, items, tm, pic)
+    if rows:
+        ftab = ("<div style='font-weight:bold;font-size:11.5px;margin:14px 0 6px'>Rincian parameter yang tidak lolos</div>"
+                "<table style='min-width:0;table-layout:auto'><tr><th style='width:90px'>Tanggal</th><th style='width:60px'>Lolos</th>"
+                "<th class='l'>Parameter tidak lolos</th><th class='l' style='width:220px'>Temuan / tindakan awal</th><th style='width:44px'>PIC</th></tr>"
+                + rows + "</table>")
+    else:
+        ftab = "<div style='margin-top:14px;color:#2e9e5b;font-weight:bold'>&#10003; Seluruh parameter lolos pada hari yang sudah terisi.</div>"
+
+    # ---- legend parameter (kanan) ----
+    lg = "<div class='lg'><h4>Parameter Uji ({} item)</h4>".format(total)
+    lg += ("<div style='margin-bottom:6px;font-size:10px'><span class='dot g'></span>Lolos &nbsp;<span class='dot y'></span>Perlu perhatian "
+           "&nbsp;<span class='dot r'></span>Tidak sesuai</div>")
+    cur = None
+    for kode, cat, k, p in params:
+        if cat != cur:
+            lg += "<div class='cat'>{}</div>".format(cat)
+            cur = cat
+        lg += "<div class='row'><span class='cd'>{}</span><span><b>{}</b><br><span style='color:#777'>{}</span></span></div>".format(kode, k, p)
+    lg += "</div>"
+
+    head = ("<div style='font-size:11px;margin:0 0 8px'><b>Modalitas :</b> {} &nbsp;&nbsp; <b>BULAN :</b> {} {} &nbsp;&nbsp; "
+            "<i style='color:#777'>Form Digital Daily Quality Control Departemen Radiologi Tahun {}</i></div>").format(modality, BLN[m - 1].upper(), y, y)
+    body = head + stats + "<div class='qcw'><div class='qcl'>" + g + ftab + "</div>" + lg + "</div>"
+    return sec("PMI Harian &ndash; Daily Quality Control: Pencapaian Parameter per Hari", ["Bar Chart", "Checklist", "Not Compliant", "Summary"], body,
+               "Tinggi bar hijau = jumlah parameter lolos dari total parameter (mis. 24/24) &middot; kuning/merah = tidak lolos &middot; kode P# di bawah bar merujuk ke legend parameter di kanan")
+
 def month_weeks(y, m):
     n = calendar.monthrange(y, m)[1]
     out, s = [], 1
@@ -586,7 +722,7 @@ def build_yearly(today, dummy):
         elif r["status"] in cnt:
             cnt[r["status"]] += 1
         out.append([r["i"], r["name"], r["item"], dfmt(r["last"]) if r["last"] else "-", dfmt(r["nx"]) if r["nx"] else "-",
-                    "<b>{}</b>".format(r["left"]) if r["left"] is not None else "-", pill(r["status"])])
+                    left_badge(r["left"]) if r["left"] is not None else "-", pill(r["status"])])
     return tbl(out, ["No", "Jenis Modality", "Item Uji", "Terakhir Dilakukan", "Jatuh Tempo Berikutnya", "Sisa Hari", "Status"]), cnt, rows
 
 def build_pmi(y, m):
@@ -657,7 +793,7 @@ def build_pme(today, dummy):
                 t += "<td class='c {}'>{}</td>".format({"Valid": "b", "Due Soon": "y", "Need Follow-up": "y", "Overdue": "r"}[r["status"]], r["nx"].day)
             else:
                 t += "<td style='background:{}'></td>".format("#fff6df" if mo == today.month else "#fff")
-        t += "<td>{} / 3</td><td>{}</td><td>{}</td><td><b>{}</b></td><td>{}</td><td>&#128206; {}</td></tr>".format(len(r["done"]), dfmt(r["last"]), dfmt(r["nx"]), r["left"], pill(r["status"]), r["rep"])
+        t += "<td>{} / 3</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>&#128206; {}</td></tr>".format(len(r["done"]), dfmt(r["last"]), dfmt(r["nx"]), left_badge(r["left"]), pill(r["status"]), r["rep"])
 
     # ---- BARIS TOTAL: numerator, denumerator, dan persentase pencapaian per bulan ----
     if pm_rows:
@@ -729,7 +865,7 @@ def build_pme(today, dummy):
             g += ("<text x='6' y='{}'>{}</text><rect x='{}' y='{}' width='{}' height='14' rx='3' fill='{}' opacity='.85'/>"
                   "<text x='{}' y='{}' fill='#333' font-size='9'>{}</text>").format(yy + 14, r["name"], X(r["last"]), yy + 4, max(2, X(r["nx"]) - X(r["last"])), HX[CL[r["status"]]], X(r["nx"]) + 5, yy + 15, dfmt(r["nx"]))
             rem = "Eskalasi ke Supervisor" if r["left"] < 0 else ("Reminder H-180 terkirim" if r["left"] <= 180 else "H-180: " + dfmt(r["nx"] - dt.timedelta(days=180)))
-            trows.append([k + 1, r["name"], "{} Tahun".format(r["per"] // 12), dfmt(r["last"]), dfmt(r["nx"]), r["left"], r["noser"], "Perlu Evaluasi" if r["ne"] else "Memenuhi", rem, pill(r["status"])])
+            trows.append([k + 1, r["name"], "{} Tahun".format(r["per"] // 12), dfmt(r["last"]), dfmt(r["nx"]), left_badge(r["left"], 180), r["noser"], "Perlu Evaluasi" if r["ne"] else "Memenuhi", rem, pill(r["status"])])
         tx = X(today)
         g += "<line x1='{0}' x2='{0}' y1='20' y2='{1}' stroke='#d64545' stroke-width='1.5' stroke-dasharray='4 3'/><text x='{2}' y='{3}' fill='#d64545' font-weight='bold'>Hari ini {4}</text></svg>".format(tx, RH * len(uk_rows) + 30, tx + 4, RH * len(uk_rows) + 38, dfmt(today))
         uk_html = g + tbl(trows, ["No", "Jenis Modality", "Periode", "Tanggal Uji", "Masa Berlaku s.d.", "Sisa Hari", "No. Sertifikat", "Hasil Uji", "Reminder Otomatis", "Status"])
@@ -771,11 +907,11 @@ def build_pme(today, dummy):
         t += "<td class='c r'>{}</td>".format(r["nx"].day) if r["left"] < 0 else "<td></td>"
         for (yv, mo) in mlist:
             t += "<td class='c {}'>{}</td>".format(CL[r["status"]], r["nx"].day) if ((r["nx"].year, r["nx"].month) == (yv, mo) and r["left"] >= 0) else "<td></td>"
-        t += "<td>{}</td><td>{}</td><td><b>{}</b></td><td>{}</td><td>{}</td></tr>".format(dfmt(r["last"]), dfmt(r["nx"]), r["left"], r["noser"], pill(r["status"]))
+        t += "<td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(dfmt(r["last"]), dfmt(r["nx"]), left_badge(r["left"]), r["noser"], pill(r["status"]))
     kal_html = (t + "</table>") if kal_rows else "<div style='padding:14px;color:#777'>Belum ada data Kalibrasi.</div>"
 
     prio.sort(key=lambda x: x[4])
-    pr = [[i + 1, c, nm, pill(s), dfmt(nx), "<b>{}</b>".format(lf), p, a, "Supervisor Radiologi + PIC" if lf < 0 else "PIC Alat"] for i, (c, nm, s, nx, lf, p, a) in enumerate(prio[:12])]
+    pr = [[i + 1, c, nm, pill(s), dfmt(nx), left_badge(lf, 180 if c == "Uji Kesesuaian" else 60), p, a, "Supervisor Radiologi + PIC" if lf < 0 else "PIC Alat"] for i, (c, nm, s, nx, lf, p, a) in enumerate(prio[:12])]
     pr_html = tbl(pr, ["No", "Kategori", "Jenis Modality / Alat", "Status", "Jatuh Tempo", "Sisa Hari", "PIC", "Tindakan / Rekomendasi", "Notifikasi Dikirim ke"]) if pr else "<div style='padding:14px;color:#2e9e5b'>&#10003; Tidak ada item yang perlu tindak lanjut.</div>"
 
     def seg(c, n, good, warn):
@@ -1139,7 +1275,11 @@ def page_dash_pmi():
     area = st.radio("Ruang / area (Suhu & Kelembapan)", AREAS, index=2, horizontal=True, key="dp_area")
     render(suhu_section_html(area, y, m, TODAY(), DUMMY()), 700)
     mod = st.radio("Modalitas (Daily QC)", DAILY_MODALITIES, index=5, horizontal=True, key="dp_mod")
-    render(qc_section_html(mod, y, m, TODAY(), DUMMY()), 900)
+    view = st.radio("Tampilan Daily QC", ["Bar Chart", "Checklist"], horizontal=True, key="dp_qcview")
+    if view == "Bar Chart":
+        render(qc_chart_html(mod, y, m, TODAY(), DUMMY()), 1100)
+    else:
+        render(qc_section_html(mod, y, m, TODAY(), DUMMY()), 900)
     render(pmi["rest"], 900)
 
 # =====================================================================
